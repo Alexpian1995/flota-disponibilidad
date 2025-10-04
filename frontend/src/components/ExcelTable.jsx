@@ -135,6 +135,10 @@ const App = () => {
       <DashboardCharts rows={flota} />
 
       {/* ------- Tabla Taller ------- */}
+
+      
+      <br/>
+      <br/>
       <h2>Taller</h2>
       <input type="text" id="placa" placeholder="Placa" />
       <input type="date" id="ingreso" />
