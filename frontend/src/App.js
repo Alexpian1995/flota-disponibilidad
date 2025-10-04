@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react';
 import ExcelTable from './components/ExcelTable';
 import DashboardCharts from './components/DashboardCharts';
 import API from './api';
+import './styles.css'; // 👈 Importamos los estilos
 
 export default function App() {
   const [flota, setFlota] = useState([]);
@@ -45,25 +46,38 @@ export default function App() {
   }
 
   return (
-    <div className="container">
-      <h1>Disponibilidad de Flota</h1>
-      {loading ? (
-        <p>Cargando...</p>
-      ) : (
-        <>
-          <ExcelTable
-            flota={flota}
-            taller={taller}
-            recuperadas={recuperadas}
-            setData={save}
-          />
-          <DashboardCharts
-            flota={flota}
-            taller={taller}
-            recuperadas={recuperadas}
-          />
-        </>
-      )}
-    </div>
+    <>
+      {/* 🧭 Encabezado con logo y título */}
+      <header>
+        <img src="/lis_black.jpg" alt="Logo" className="logo" />
+        <h1>🚗 Disponibilidad de Flota</h1>
+      </header>
+
+      {/* 📊 Contenido */}
+      <div className="container">
+        {loading ? (
+          <p style={{ textAlign: 'center' }}>Cargando...</p>
+        ) : (
+          <>
+            <ExcelTable
+              flota={flota}
+              taller={taller}
+              recuperadas={recuperadas}
+              setData={save}
+            />
+            <DashboardCharts
+              flota={flota}
+              taller={taller}
+              recuperadas={recuperadas}
+            />
+          </>
+        )}
+      </div>
+
+      {/* 📌 Pie de página */}
+      <footer>
+        © {new Date().getFullYear()} Anderson Alzate — Todos los derechos reservados.
+      </footer>
+    </>
   );
 }
