@@ -1,8 +1,8 @@
 import React, { useState, useRef } from "react";
 import * as XLSX from "xlsx";
 import { saveAs } from "file-saver";
-import DashboardCharts from "./DashboardCharts"; // gráfico de flota
-import html2canvas from "html2canvas"; // 👈 librería para screenshot
+import DashboardCharts from "./DashboardCharts";
+import html2canvas from "html2canvas";
 
 const App = () => {
   const hoy = new Date().toISOString().split("T")[0];
@@ -10,7 +10,29 @@ const App = () => {
   const [flota, setFlota] = useState([]);
   const [taller, setTaller] = useState([]);
   const [recuperadas, setRecuperadas] = useState([]);
-  const dashboardRef = useRef(null); // 👈 referencia al contenedor
+  const [workbook, setWorkbook] = useState(null);
+  const [historialMensual, setHistorialMensual] = useState({
+    flota: [],
+    taller: [],
+    recuperadas: [],
+  });
+  const [modoHistorial, setModoHistorial] = useState(false);
+
+  const dashboardRef = useRef(null);
+
+  // ------- CARGAR HISTORIAL EXISTENTE -------
+  const handleFileUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const data = new Uint8Array(event.target.result);
+      const wb = XLSX.read(data, { type: "array" });
+      setWorkbook(wb);
+      alert(`✅ Historial cargado: ${file.name}`);
+    };
+    reader.readAsArrayBuffer(file);
+  };
 
   // ------- AGREGAR REGISTROS -------
   const addFlota = (asignada, noDisponible) => {
@@ -50,36 +72,81 @@ const App = () => {
     setRecuperadas([...recuperadas, row]);
   };
 
+  // ------- ACTUALIZAR REGISTRO EN TALLER -------
+  const updateTallerRow = (index) => {
+    const current = taller[index];
+    const placa = prompt("Placa:", current.placa);
+    const ingresoTaller = prompt(
+      "Ingreso Taller (yyyy-MM-dd):",
+      current.ingresoTaller
+    );
+    const novedad = prompt("Novedad:", current.novedad);
+    const status = prompt("Status:", current.status);
+    const tallerName = prompt("Taller:", current.taller);
+
+    if (!placa || !ingresoTaller) return;
+
+    const dias = Math.floor(
+      (new Date(hoy) - new Date(ingresoTaller)) / (1000 * 60 * 60 * 24)
+    );
+
+    const updated = [...taller];
+    updated[index] = {
+      placa,
+      ingresoTaller,
+      novedad,
+      status,
+      taller: tallerName,
+      diasEnTaller: dias,
+    };
+
+    setTaller(updated);
+  };
+
   // ------- LIMPIAR DATOS -------
   const clearAll = () => {
     setFlota([]);
     setTaller([]);
     setRecuperadas([]);
-    alert("Datos limpiados. Listo para nuevo día.");
+    setModoHistorial(false);
+
+    // 🧼 Limpiar todos los inputs y selects
+    const inputs = document.querySelectorAll("input, select");
+    inputs.forEach((input) => (input.value = ""));
+
+    alert("🧹 Todos los datos e inputs han sido limpiados.");
   };
 
-  // ------- EXPORTAR A EXCEL -------
+  // ------- EXPORTAR A HISTORIAL EXCEL -------
   const exportToExcel = () => {
-    const workbook = XLSX.utils.book_new();
+    let wb = workbook;
+    if (!wb) wb = XLSX.utils.book_new();
 
-    const flotaSheet = XLSX.utils.json_to_sheet(flota, {
-      header: ["fecha", "asignada", "noDisponible", "disponible"],
-    });
-    const tallerSheet = XLSX.utils.json_to_sheet(taller, {
-      header: ["placa", "ingresoTaller", "novedad", "status", "taller", "diasEnTaller"],
-    });
-    const recuperadasSheet = XLSX.utils.json_to_sheet(recuperadas, {
-      header: ["placa", "fechaIngreso", "reparacion", "status", "taller", "fechaEntrega"],
-    });
+    const appendToSheet = (sheetName, newData) => {
+      let sheet = wb.Sheets[sheetName];
+      let existingData = [];
 
-    XLSX.utils.book_append_sheet(workbook, flotaSheet, "Flota");
-    XLSX.utils.book_append_sheet(workbook, tallerSheet, "Taller");
-    XLSX.utils.book_append_sheet(workbook, recuperadasSheet, "Recuperadas");
+      if (sheet) {
+        existingData = XLSX.utils.sheet_to_json(sheet);
+      } else {
+        sheet = XLSX.utils.json_to_sheet([]);
+        XLSX.utils.book_append_sheet(wb, sheet, sheetName);
+      }
 
-    const excelBuffer = XLSX.write(workbook, { bookType: "xlsx", type: "array" });
-    const fileName = `Reporte_${hoy}.xlsx`;
+      const combinedData = [...existingData, ...newData];
+      const newSheet = XLSX.utils.json_to_sheet(combinedData);
+      wb.Sheets[sheetName] = newSheet;
+    };
+
+    appendToSheet("Flota", flota);
+    appendToSheet("Taller", taller);
+    appendToSheet("Recuperadas", recuperadas);
+
+    const excelBuffer = XLSX.write(wb, { bookType: "xlsx", type: "array" });
     const data = new Blob([excelBuffer], { type: "application/octet-stream" });
-    saveAs(data, fileName);
+    saveAs(data, "Historial.xlsx");
+    setWorkbook(wb);
+    alert("📊 Historial actualizado y descargado");
   };
 
   // ------- EXPORTAR PANTALLAZO -------
@@ -92,53 +159,149 @@ const App = () => {
     link.click();
   };
 
+  // ------- FILTRAR HISTORIAL POR MES -------
+  const handleMonthChange = (e) => {
+    if (!workbook) {
+      alert("⚠️ Carga primero un Historial.xlsx");
+      return;
+    }
+
+    const selectedMonth = e.target.value; // yyyy-MM
+
+    const flotaSheet = workbook.Sheets["Flota"];
+    const flotaData = flotaSheet ? XLSX.utils.sheet_to_json(flotaSheet) : [];
+    const flotaFiltered = flotaData.filter((row) =>
+      String(row.fecha || "").startsWith(selectedMonth)
+    );
+
+    const tallerSheet = workbook.Sheets["Taller"];
+    const tallerData = tallerSheet ? XLSX.utils.sheet_to_json(tallerSheet) : [];
+    const tallerFiltered = tallerData.filter((row) => {
+      const fecha =
+        row.ingresoTaller ||
+        row["Ingreso Taller"] ||
+        row.fecha ||
+        row["Fecha"];
+      if (!fecha) return false;
+      const fechaStr =
+        typeof fecha === "string"
+          ? fecha
+          : new Date(fecha).toISOString().split("T")[0];
+      return fechaStr.startsWith(selectedMonth);
+    });
+
+    const recSheet = workbook.Sheets["Recuperadas"];
+    const recData = recSheet ? XLSX.utils.sheet_to_json(recSheet) : [];
+    const recFiltered = recData.filter((row) =>
+      String(row.fechaIngreso || "").startsWith(selectedMonth)
+    );
+
+    setHistorialMensual({
+      flota: flotaFiltered,
+      taller: tallerFiltered,
+      recuperadas: recFiltered,
+    });
+    setModoHistorial(true);
+  };
+
   return (
     <div ref={dashboardRef} style={{ padding: "20px" }}>
-      <h2>Disponibilidad de Flota (Hoy: {hoy})</h2>
+      <h2>🚛 Disponibilidad de Flota (Hoy: {hoy})</h2>
 
-      {/* ------- Tabla Flota ------- */}
-      <input type="number" id="flotaAsignada" placeholder="Flota asignada" />
-      <input type="number" id="flotaNoDisp" placeholder="Flota no disponible" />
-      <button
-        onClick={() =>
-          addFlota(
-            document.getElementById("flotaAsignada").value,
-            document.getElementById("flotaNoDisp").value
-          )
-        }
-      >
-        Agregar Flota
-      </button>
+      {/* 📂 Cargar Historial Excel */}
+      <input
+        type="file"
+        accept=".xlsx"
+        onChange={handleFileUpload}
+        style={{ marginBottom: "10px" }}
+      />
 
-      <table border="1" style={{ marginTop: "10px" }}>
-        <thead>
-          <tr>
-            <th>Fecha</th>
-            <th>Asignada</th>
-            <th>No Disponible</th>
-            <th>Disponible</th>
-          </tr>
-        </thead>
-        <tbody>
-          {flota.map((f, i) => (
-            <tr key={i}>
-              <td>{f.fecha}</td>
-              <td>{f.asignada}</td>
-              <td>{f.noDisponible}</td>
-              <td>{f.disponible}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {/* 📅 Selector de Mes */}
+      <label>📅 Ver historial del mes:</label>
+      <input
+        type="month"
+        onChange={handleMonthChange}
+        style={{ marginLeft: "10px" }}
+      />
 
-      {/* Gráfico de disponibilidad */}
-      <DashboardCharts rows={flota} />
+      {/* Tabla y gráfico mensual */}
+      {modoHistorial && (
+        <div style={{ marginTop: "10px" }}>
+          <h3>📈 Historial mensual seleccionado</h3>
+          <DashboardCharts rows={historialMensual.flota} />
 
-      {/* ------- Tabla Taller ------- */}
+          {/* Tabla Taller mensual */}
+          <h4>🛠️ Taller</h4>
+          <table border="1" style={{ marginTop: "10px" }}>
+            <thead>
+              <tr>
+                <th>Placa</th>
+                <th>Ingreso Taller</th>
+                <th>Novedad</th>
+                <th>Status</th>
+                <th>Taller</th>
+                <th>Días en Taller</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historialMensual.taller.map((t, i) => (
+                <tr key={i}>
+                  <td>{t.placa}</td>
+                  <td>{t.ingresoTaller || t["Ingreso Taller"]}</td>
+                  <td>{t.novedad}</td>
+                  <td>{t.status}</td>
+                  <td>{t.taller}</td>
+                  <td>{t.diasEnTaller}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
 
-      
-      <br/>
-      <br/>
+      {/* Tabla diaria */}
+      {!modoHistorial && (
+        <>
+          <input type="number" id="flotaAsignada" placeholder="Flota asignada" />
+          <input type="number" id="flotaNoDisp" placeholder="Flota no disponible" />
+          <button
+            onClick={() =>
+              addFlota(
+                document.getElementById("flotaAsignada").value,
+                document.getElementById("flotaNoDisp").value
+              )
+            }
+          >
+            Agregar Flota
+          </button>
+
+          <table border="1" style={{ marginTop: "10px" }}>
+            <thead>
+              <tr>
+                <th>Fecha</th>
+                <th>Asignada</th>
+                <th>No Disponible</th>
+                <th>Disponible</th>
+              </tr>
+            </thead>
+            <tbody>
+              {flota.map((f, i) => (
+                <tr key={i}>
+                  <td>{f.fecha}</td>
+                  <td>{f.asignada}</td>
+                  <td>{f.noDisponible}</td>
+                  <td>{f.disponible}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <DashboardCharts rows={flota} />
+        </>
+      )}
+
+      {/* ------- Tabla Taller diaria ------- */}
+      <br />
       <h2>Taller</h2>
       <input type="text" id="placa" placeholder="Placa" />
       <input type="date" id="ingreso" />
@@ -171,6 +334,7 @@ const App = () => {
             <th>Status</th>
             <th>Taller</th>
             <th>Días en Taller</th>
+            <th>Acciones</th>
           </tr>
         </thead>
         <tbody>
@@ -182,6 +346,9 @@ const App = () => {
               <td>{t.status}</td>
               <td>{t.taller}</td>
               <td>{t.diasEnTaller}</td>
+              <td>
+                <button onClick={() => updateTallerRow(i)}>✏️ Actualizar</button>
+              </td>
             </tr>
           ))}
         </tbody>
@@ -235,7 +402,7 @@ const App = () => {
 
       {/* Botones */}
       <br />
-      <button onClick={exportToExcel}>💾 Guardar en Excel</button>
+      <button onClick={exportToExcel}>💾 Guardar en Excel (Historial)</button>
       <button
         onClick={clearAll}
         style={{
