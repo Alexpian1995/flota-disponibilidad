@@ -110,7 +110,6 @@ const App = () => {
     setRecuperadas([]);
     setModoHistorial(false);
 
-    // 🧼 Limpiar todos los inputs y selects
     const inputs = document.querySelectorAll("input, select");
     inputs.forEach((input) => (input.value = ""));
 
@@ -168,12 +167,14 @@ const App = () => {
 
     const selectedMonth = e.target.value; // yyyy-MM
 
+    // Flota
     const flotaSheet = workbook.Sheets["Flota"];
     const flotaData = flotaSheet ? XLSX.utils.sheet_to_json(flotaSheet) : [];
     const flotaFiltered = flotaData.filter((row) =>
       String(row.fecha || "").startsWith(selectedMonth)
     );
 
+    // Taller
     const tallerSheet = workbook.Sheets["Taller"];
     const tallerData = tallerSheet ? XLSX.utils.sheet_to_json(tallerSheet) : [];
     const tallerFiltered = tallerData.filter((row) => {
@@ -190,11 +191,22 @@ const App = () => {
       return fechaStr.startsWith(selectedMonth);
     });
 
+    // ✅ Recuperadas filtradas por FECHA DE ENTREGA
     const recSheet = workbook.Sheets["Recuperadas"];
     const recData = recSheet ? XLSX.utils.sheet_to_json(recSheet) : [];
-    const recFiltered = recData.filter((row) =>
-      String(row.fechaIngreso || "").startsWith(selectedMonth)
-    );
+    const recFiltered = recData.filter((row) => {
+      const fecha =
+        row.fechaEntrega ||
+        row["Fecha Entrega"] ||
+        row["fecha entrega"] ||
+        row["FechaEntrega"];
+      if (!fecha) return false;
+      const fechaStr =
+        typeof fecha === "string"
+          ? fecha
+          : new Date(fecha).toISOString().split("T")[0];
+      return fechaStr.startsWith(selectedMonth);
+    });
 
     setHistorialMensual({
       flota: flotaFiltered,
@@ -230,7 +242,7 @@ const App = () => {
           <h3>📈 Historial mensual seleccionado</h3>
           <DashboardCharts rows={historialMensual.flota} />
 
-          {/* Tabla Taller mensual */}
+          {/* Taller mensual */}
           <h4>🛠️ Taller</h4>
           <table border="1" style={{ marginTop: "10px" }}>
             <thead>
@@ -252,6 +264,33 @@ const App = () => {
                   <td>{t.status}</td>
                   <td>{t.taller}</td>
                   <td>{t.diasEnTaller}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Recuperadas mensual */}
+          <h4>✅ Placas Recuperadas (por fecha de entrega)</h4>
+          <table border="1" style={{ marginTop: "10px" }}>
+            <thead>
+              <tr>
+                <th>Placa</th>
+                <th>Fecha Ingreso</th>
+                <th>Reparación / MTTO</th>
+                <th>Status</th>
+                <th>Taller</th>
+                <th>Fecha Entrega</th>
+              </tr>
+            </thead>
+            <tbody>
+              {historialMensual.recuperadas.map((r, i) => (
+                <tr key={i}>
+                  <td>{r.placa}</td>
+                  <td>{r.fechaIngreso}</td>
+                  <td>{r.reparacion}</td>
+                  <td>{r.status}</td>
+                  <td>{r.taller}</td>
+                  <td>{r.fechaEntrega || r["Fecha Entrega"]}</td>
                 </tr>
               ))}
             </tbody>
@@ -354,7 +393,7 @@ const App = () => {
         </tbody>
       </table>
 
-      {/* ------- Tabla Recuperadas ------- */}
+      {/* ------- Tabla Recuperadas diaria ------- */}
       <h2>PLACAS RECUPERADAS DE TALLER - OPERATIVAS MAÑANA</h2>
       <input type="text" id="placaRec" placeholder="Placa" />
       <input type="date" id="ingresoRec" />
